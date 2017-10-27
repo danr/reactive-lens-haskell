@@ -5,7 +5,6 @@
 {-# language ScopedTypeVariables #-}
 module ReactiveLens where
 
-import Control.Applicative
 import Lens.Micro as L
 import Lens.Micro.Extras
 import Control.Monad.State as S
@@ -36,19 +35,26 @@ data ReactiveState m a = R {
   listeners :: [m ()]
 }
 
-initState :: forall a m . (MonadState (ReactiveState m a) m) => a -> Store m a
-initState s0 = Store {
+initState :: forall a m . (MonadState (ReactiveState m a) m) => a -> (Store m a, ReactiveState m a)
+initState s0 = (
+  Store {
     lens = id,
     get = S.gets s,
     set = \ a -> modify (\ r -> r {s = a, pending = True}),
     transaction = transaction,
     listen = \ m -> modify (\ r@R{..} -> r {listeners = m:listeners})
-  }
+  },
+  R {
+    s = s0,
+    pending = False,
+    depth = 0,
+    listeners = []
+  })
   where
   try_notify = do
-    R{..} <- S.get
+    r@R{..} <- S.get
     when (depth == 0 && pending) $ do
-      modify (\ r@R{..} -> r {pending = False})
+      put (r {pending = False})
       transaction $ sequence_ listeners
 
   transaction :: forall t . m t -> m t
